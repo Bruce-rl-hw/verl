@@ -22,10 +22,19 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 import ray
+from ray.actor import ActorHandle
+
+# Apply vLLM patches for Router Replay before importing vllm
+from verl.third_party_patches import vllm_router_replay_patch
+vllm_router_replay_patch.apply()
+
 import vllm.entrypoints.cli.serve
 from packaging import version
-from ray.actor import ActorHandle
-from vllm import SamplingParams
+from vllm.sampling_params import SamplingParams
+try:
+    from vllm.model_executor.layers.fused_moe import routed_experts_capturer as router_capture
+except ImportError:
+    router_capture = None  # Not patched yet
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.cli.serve import run_headless
 from vllm.entrypoints.openai.api_server import (
