@@ -30,6 +30,22 @@ def patch_arg_utils():
         is_dataclass = dataclasses.is_dataclass(arg_utils.EngineArgs)
         logger.info("EngineArgs is dataclass: %s", is_dataclass)
 
+        # Add enable_return_routed_experts to EngineArgs
+        # For dataclass, we need to add it properly
+        if is_dataclass:
+            # Add as class attribute with type annotation
+            default_value = getattr(ModelConfig, 'enable_return_routed_experts', False)
+            arg_utils.EngineArgs.enable_return_routed_experts = default_value
+            # Add type annotation
+            if hasattr(arg_utils.EngineArgs, '__annotations__'):
+                arg_utils.EngineArgs.__annotations__['enable_return_routed_experts'] = bool
+            logger.info("Added enable_return_routed_experts to EngineArgs dataclass (default: %s)", default_value)
+        else:
+            # Regular class
+            default_value = getattr(ModelConfig, 'enable_return_routed_experts', False)
+            arg_utils.EngineArgs.enable_return_routed_experts = default_value
+            logger.info("Added enable_return_routed_experts to EngineArgs class (default: %s)", default_value)
+
         # Patch add_cli_args to add our argument
         if hasattr(arg_utils.EngineArgs, 'add_cli_args'):
             original_add_cli_args = arg_utils.EngineArgs.add_cli_args
@@ -49,6 +65,23 @@ def patch_arg_utils():
 
             arg_utils.EngineArgs.add_cli_args = patched_add_cli_args
             logger.info("Patched EngineArgs.add_cli_args to add --enable-return-routed-experts")
+
+        # Patch from_cli_args if it exists (to properly pass the parameter)
+        if hasattr(arg_utils.EngineArgs, 'from_cli_args'):
+            original_from_cli_args = arg_utils.EngineArgs.from_cli_args
+
+            @classmethod
+            def patched_from_cli_args(cls, args):
+                # Call original
+                instance = original_from_cli_args(args)
+                # Ensure enable_return_routed_experts is set from args
+                if hasattr(args, 'enable_return_routed_experts'):
+                    instance.enable_return_routed_experts = args.enable_return_routed_experts
+                    logger.debug("Set enable_return_routed_experts=%s from CLI args", args.enable_return_routed_experts)
+                return instance
+
+            arg_utils.EngineArgs.from_cli_args = patched_from_cli_args
+            logger.info("Patched EngineArgs.from_cli_args")
 
         # Patch create_model_config to transfer the parameter
         original_create_model_config = arg_utils.EngineArgs.create_model_config
