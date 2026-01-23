@@ -20,32 +20,54 @@ logger = logging.getLogger(__name__)
 
 
 def patch_arg_utils():
-    """Patch vllm.engine.arg_utils to pass enable_return_routed_experts."""
+    """Patch vllm.engine.arg_utils to support enable_return_routed_experts."""
     try:
         from vllm.engine import arg_utils
         from vllm.config import ModelConfig
+        import dataclasses
 
-        # Add enable_return_routed_experts attribute to EngineArgs class
-        if not hasattr(arg_utils.EngineArgs, 'enable_return_routed_experts'):
-            # Get default value from ModelConfig
-            default_value = getattr(ModelConfig, 'enable_return_routed_experts', False)
-            arg_utils.EngineArgs.enable_return_routed_experts = default_value
-            logger.info("Added enable_return_routed_experts attribute to EngineArgs (default: %s)", default_value)
+        # Check if EngineArgs is a dataclass
+        is_dataclass = dataclasses.is_dataclass(arg_utils.EngineArgs)
+        logger.info("EngineArgs is dataclass: %s", is_dataclass)
 
+        # Patch add_cli_args to add our argument
+        if hasattr(arg_utils.EngineArgs, 'add_cli_args'):
+            original_add_cli_args = arg_utils.EngineArgs.add_cli_args
+
+            @staticmethod
+            def patched_add_cli_args(parser):
+                parser = original_add_cli_args(parser)
+                # Add enable_return_routed_experts argument
+                parser.add_argument(
+                    '--enable-return-routed-experts',
+                    '--enable_return_routed_experts',
+                    type=lambda x: x.lower() == 'true' if isinstance(x, str) else bool(x),
+                    default=False,
+                    help='Enable returning routed experts for Router Replay'
+                )
+                return parser
+
+            arg_utils.EngineArgs.add_cli_args = patched_add_cli_args
+            logger.info("Patched EngineArgs.add_cli_args to add --enable-return-routed-experts")
+
+        # Patch create_model_config to transfer the parameter
         original_create_model_config = arg_utils.EngineArgs.create_model_config
 
         def patched_create_model_config(self, *args, **kwargs):
             result = original_create_model_config(self, *args, **kwargs)
-            # Ensure enable_return_routed_experts is passed to ModelConfig
-            if hasattr(self, 'enable_return_routed_experts'):
-                result.enable_return_routed_experts = self.enable_return_routed_experts
+            # Transfer enable_return_routed_experts from EngineArgs to ModelConfig
+            enable_value = getattr(self, 'enable_return_routed_experts', False)
+            result.enable_return_routed_experts = enable_value
+            logger.debug("Transferred enable_return_routed_experts=%s to ModelConfig", enable_value)
             return result
 
         arg_utils.EngineArgs.create_model_config = patched_create_model_config
-        logger.info("Patched vllm.engine.arg_utils.EngineArgs.create_model_config")
+        logger.info("Patched EngineArgs.create_model_config")
         return True
     except Exception as e:
         logger.warning("Failed to patch arg_utils: %s", e)
+        import traceback
+        logger.debug("Traceback: %s", traceback.format_exc())
         return False
 
 
