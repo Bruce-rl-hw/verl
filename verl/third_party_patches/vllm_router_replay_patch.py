@@ -23,6 +23,14 @@ def patch_arg_utils():
     """Patch vllm.engine.arg_utils to pass enable_return_routed_experts."""
     try:
         from vllm.engine import arg_utils
+        from vllm.config import ModelConfig
+
+        # Add enable_return_routed_experts attribute to EngineArgs class
+        if not hasattr(arg_utils.EngineArgs, 'enable_return_routed_experts'):
+            # Get default value from ModelConfig
+            default_value = getattr(ModelConfig, 'enable_return_routed_experts', False)
+            arg_utils.EngineArgs.enable_return_routed_experts = default_value
+            logger.info("Added enable_return_routed_experts attribute to EngineArgs (default: %s)", default_value)
 
         original_create_model_config = arg_utils.EngineArgs.create_model_config
 
