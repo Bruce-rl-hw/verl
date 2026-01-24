@@ -53,11 +53,11 @@ def patch_arg_utils():
             @staticmethod
             def patched_add_cli_args(parser):
                 parser = original_add_cli_args(parser)
-                # Add enable_return_routed_experts argument
+                # Add enable_return_routed_experts argument as a boolean flag
                 parser.add_argument(
                     '--enable-return-routed-experts',
                     '--enable_return_routed_experts',
-                    type=lambda x: x.lower() == 'true' if isinstance(x, str) else bool(x),
+                    action='store_true',
                     default=False,
                     help='Enable returning routed experts for Router Replay'
                 )

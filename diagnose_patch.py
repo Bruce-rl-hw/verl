@@ -92,20 +92,37 @@ except Exception as e:
     traceback.print_exc()
 
 print("\n" + "=" * 60)
-print("STEP 6: Check if patch functions were called")
+print("STEP 6: Test CLI argument parsing")
 print("=" * 60)
-# Try to manually call patch_arg_utils
+# Test if CLI parsing works (simulates actual vLLM usage)
 try:
-    print("Attempting to manually call patch_arg_utils()...")
-    result = vllm_router_replay_patch.patch_arg_utils()
-    print(f"patch_arg_utils() returned: {result}")
-
-    # Check again
     from vllm.engine import arg_utils
-    has_attr_after = hasattr(arg_utils.EngineArgs, 'enable_return_routed_experts')
-    print(f"After manual patch, has attribute: {has_attr_after}")
+    import argparse
+
+    print("Creating parser with patched add_cli_args()...")
+    parser = argparse.ArgumentParser()
+    parser = arg_utils.EngineArgs.add_cli_args(parser)
+
+    # Test 1: Parse with flag only (how verl calls it)
+    print("\nTest 1: Parsing with flag only (--enable_return_routed_experts)")
+    try:
+        args = parser.parse_args(['--model', 'test', '--enable_return_routed_experts'])
+        print(f"✓ Parsing succeeded")
+        print(f"  enable_return_routed_experts value: {args.enable_return_routed_experts}")
+    except SystemExit as e:
+        print(f"✗ Parsing failed with exit code: {e.code}")
+        print("  This means CLI argument definition is incorrect!")
+
+    # Test 2: Parse without flag
+    print("\nTest 2: Parsing without flag (default value)")
+    parser2 = argparse.ArgumentParser()
+    parser2 = arg_utils.EngineArgs.add_cli_args(parser2)
+    args2 = parser2.parse_args(['--model', 'test'])
+    print(f"✓ Parsing succeeded")
+    print(f"  enable_return_routed_experts default: {args2.enable_return_routed_experts}")
+
 except Exception as e:
-    print(f"Error calling patch_arg_utils(): {e}")
+    print(f"✗ Error testing CLI parsing: {e}")
     import traceback
     traceback.print_exc()
 
