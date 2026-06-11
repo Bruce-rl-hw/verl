@@ -140,7 +140,10 @@ def get_model(
 
     # Fp16 conversion.
     config: TransformerConfig = get_model_config(model[0])
-    config.fp8 = None
+    # fp8 is non-None here only when explicitly enabled via override_transformer_config;
+    # otherwise keep the historical behavior of forcing it off.
+    if not getattr(config, "fp8", None):
+        config.fp8 = None
     tfconfig: TransformerConfig = model[0].config
     if config.fp16 or config.bf16:  # the ModelParallelConfig in GPTModel
         model = [Float16Module(config, model_module) for model_module in model]

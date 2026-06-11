@@ -213,7 +213,7 @@ class McoreEngineConfig(EngineConfig):
     def __post_init__(self) -> None:
         super().__post_init__()
         """config validation logics go here"""
-        assert self.strategy == "megatron"
+        assert self.strategy in ["megatron", "megatron_adaptor"], f"strategy {self.strategy} not supported"
         assert self.dtype in ["bfloat16", "float16"], f"dtype {self.dtype} not supported"
         if self.vanilla_mbridge:
             warnings.warn(
