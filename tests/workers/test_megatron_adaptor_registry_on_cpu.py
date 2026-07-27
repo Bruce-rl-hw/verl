@@ -12,23 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pytest
 
-def test_registry_resolves_adaptor_engine_on_npu(monkeypatch):
-    monkeypatch.setenv("VERL_ENGINE_DEVICE", "npu")
-    from verl.workers.engine import EngineRegistry
+try:
+    from verl.workers.engine import MegatronAdaptorEngineWithLMHead as _AdaptorLMEngine
+except Exception:
+    _AdaptorLMEngine = None
 
-    lm_cls = EngineRegistry.get_engine_cls("language_model", "megatron_adaptor")
-    assert lm_cls.__name__ == "MegatronAdaptorEngineWithLMHead"
-    vm_cls = EngineRegistry.get_engine_cls("value_model", "megatron_adaptor")
-    assert vm_cls.__name__ == "MegatronAdaptorEngineWithValueHead"
-
-
-def test_adaptor_does_not_shadow_plain_megatron_backend(monkeypatch):
-    monkeypatch.setenv("VERL_ENGINE_DEVICE", "npu")
-    from verl.workers.engine import EngineRegistry
-
-    cls = EngineRegistry.get_engine_cls("language_model", "megatron")
-    assert cls.__name__ != "MegatronAdaptorEngineWithLMHead"
+# The megatron_adaptor engine classes register at import of verl.workers.engine. Registration
+# only needs megatron-core (not torch_npu / the megatron_adaptor patch layer), so it succeeds on
+# the GPU-based CI image and the registry assertions below run there. When megatron-core itself is
+# absent the classes are not importable, so those assertions are skipped instead of failing.
+_ADAPTOR_UNAVAILABLE = _AdaptorLMEngine is None
+_ADAPTOR_SKIP_REASON = "megatron / megatron_adaptor engine not importable in this environment"
 
 
 def test_mcore_config_accepts_adaptor_strategy():
@@ -39,9 +35,29 @@ def test_mcore_config_accepts_adaptor_strategy():
 
 
 def test_mcore_config_rejects_unknown_strategy():
-    import pytest
-
     from verl.workers.config import McoreEngineConfig
 
     with pytest.raises(AssertionError):
         McoreEngineConfig(strategy="not_a_backend")
+
+
+@pytest.mark.skipif(_ADAPTOR_UNAVAILABLE, reason=_ADAPTOR_SKIP_REASON)
+def test_adaptor_engine_registered_under_npu_backend():
+    from verl.workers.engine.base import EngineRegistry
+
+    lm = EngineRegistry._engines["language_model"]
+    vm = EngineRegistry._engines["value_model"]
+
+    assert lm["megatron_adaptor"]["npu"].__name__ == "MegatronAdaptorEngineWithLMHead"
+    assert vm["megatron_adaptor"]["npu"].__name__ == "MegatronAdaptorEngineWithValueHead"
+
+
+@pytest.mark.skipif(_ADAPTOR_UNAVAILABLE, reason=_ADAPTOR_SKIP_REASON)
+def test_adaptor_does_not_shadow_plain_megatron_backend():
+    from verl.workers.engine.base import EngineRegistry
+
+    lm = EngineRegistry._engines["language_model"]
+    # megatron_adaptor must be a distinct backend entry, never overwriting the plain
+    # megatron backend's registrations.
+    for engine_cls in lm.get("megatron", {}).values():
+        assert engine_cls.__name__ != "MegatronAdaptorEngineWithLMHead"

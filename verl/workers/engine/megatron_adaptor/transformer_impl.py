@@ -15,24 +15,6 @@
 import logging
 import os
 
-try:
-    # Importing megatron_adaptor applies the Ascend NPU monkey patches to megatron.core.
-    # It must run before any megatron module is imported so that from-imports elsewhere
-    # bind the patched attributes.
-    import megatron_adaptor  # noqa: F401
-
-    HAVE_MEGATRON_ADAPTOR = True
-except Exception:
-    # torch_npu raises non-ImportError (e.g. UnicodeDecodeError) when CANN env is missing
-    HAVE_MEGATRON_ADAPTOR = False
-
-from verl.trainer.config import CheckpointConfig
-from verl.workers.config import (
-    HFModelConfig,
-    McoreEngineConfig,
-    McoreOptimizerConfig,
-)
-
 from ..base import EngineRegistry
 from ..megatron import MegatronEngineWithLMHead, MegatronEngineWithValueHead
 
@@ -45,35 +27,36 @@ _ADAPTOR_REQUIRED_MSG = (
 )
 
 
+def _apply_megatron_adaptor_patch():
+    """Import megatron_adaptor to apply the Ascend NPU monkey patches to megatron.core.
+
+    Done lazily (mirroring the MindSpeed backend's ``repatch()``) so the patches are applied only
+    when a megatron_adaptor engine is actually initialized -- importing this module for engine
+    registration, or selecting another backend, never triggers them. This also avoids clashing
+    with the top-level ``megatron_adaptor`` module shipped by MindSpeed-LLM on Ascend images.
+    """
+    try:
+        import megatron_adaptor  # noqa: F401
+    except Exception as e:
+        # torch_npu raises non-ImportError (e.g. UnicodeDecodeError) when the CANN env is missing.
+        raise AssertionError(_ADAPTOR_REQUIRED_MSG) from e
+
+
 @EngineRegistry.register(model_type="language_model", backend="megatron_adaptor", device="npu")
 class MegatronAdaptorEngineWithLMHead(MegatronEngineWithLMHead):
-    """Megatron engine on Ascend NPU via the lightweight MegatronAdaptor patch layer.
+    """Megatron engine on Ascend NPU via the lightweight MegatronAdaptor patch layer."""
 
-    Unlike the MindSpeed backend, all patching happens once at import time of
-    megatron_adaptor; no per-engine repatch call is needed.
-    """
-
-    def __init__(
-        self,
-        model_config: HFModelConfig,
-        engine_config: McoreEngineConfig,
-        optimizer_config: McoreOptimizerConfig,
-        checkpoint_config: CheckpointConfig,
-    ):
-        assert HAVE_MEGATRON_ADAPTOR, _ADAPTOR_REQUIRED_MSG
-        super().__init__(model_config, engine_config, optimizer_config, checkpoint_config)
+    def _init_device_mesh(self):
+        # Apply the MegatronAdaptor patches before initialize_model_parallel, mirroring the
+        # MindSpeed backend, so the patched megatron.core APIs are in effect at model build time.
+        _apply_megatron_adaptor_patch()
+        super()._init_device_mesh()
 
 
 @EngineRegistry.register(model_type="value_model", backend="megatron_adaptor", device="npu")
 class MegatronAdaptorEngineWithValueHead(MegatronEngineWithValueHead):
     """Value-model variant of the MegatronAdaptor NPU engine."""
 
-    def __init__(
-        self,
-        model_config: HFModelConfig,
-        engine_config: McoreEngineConfig,
-        optimizer_config: McoreOptimizerConfig,
-        checkpoint_config: CheckpointConfig,
-    ):
-        assert HAVE_MEGATRON_ADAPTOR, _ADAPTOR_REQUIRED_MSG
-        super().__init__(model_config, engine_config, optimizer_config, checkpoint_config)
+    def _init_device_mesh(self):
+        _apply_megatron_adaptor_patch()
+        super()._init_device_mesh()
